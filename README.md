@@ -1,6 +1,4 @@
-Here is the professional `README.md` file, stripped of all icons and emojis for a clean, technical presentation.
 
----
 
 # Distributed-KV-Store
 
