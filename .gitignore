@@ -1,0 +1,13 @@
+# Data directories
+kvstore_data/
+kvstore_bench/
+kvstore_durability/
+kvstore_test/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Logs and Results
+*.log
+result.txt
