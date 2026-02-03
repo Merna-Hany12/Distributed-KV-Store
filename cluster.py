@@ -6,6 +6,7 @@ import random
 import sys
 from server import KVStore
 from typing import  List, Tuple
+from indexing_module import IndexManager
 
 # States
 FOLLOWER = 0
@@ -27,7 +28,7 @@ class ClusterNode:
         # Election timers
         self.last_heartbeat = time.time()
         self.election_timeout = random.uniform(1.5, 3.0) # Randomized to prevent split vote
-        
+        self.index_manager = IndexManager()
         self.running = True
         self.lock = threading.Lock()
         
@@ -79,7 +80,11 @@ class ClusterNode:
             return self._handle_heartbeat(msg)
         elif mtype == 'replicate':
             return self._handle_replication(msg)
-            
+        elif mtype == 'full_text_search':
+            if self.state != LEADER:
+                return {'status': 'redirect', 'leader_id': self.leader_id}
+            results = self.store.full_text_search(msg['query'], msg.get('top_k', 10))
+            return {'status': 'ok', 'results': results}            
         # --- CLIENT MESSAGES ---
         # "Writes and reads happen only to primary"
         if self.state != LEADER:

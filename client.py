@@ -67,3 +67,26 @@ class KVClient:
         """Close the connection."""
         if self.socket:
             self.socket.close()
+    def FullTextSearch(self, query: str, top_k: int = 10) -> List[Tuple[str, float]]:
+        """Full-text search with TF-IDF ranking"""
+        request = {'command': 'full_text_search', 'query': query, 'top_k': top_k}
+        response = self._send_request(request)
+        return response.get('results', [])
+    
+    def PhraseSearch(self, phrase: str) -> List[str]:
+        """Exact phrase search"""
+        request = {'command': 'phrase_search', 'phrase': phrase}
+        response = self._send_request(request)
+        return response.get('results', [])
+    
+    def SemanticSearch(self, query: str, top_k: int = 10) -> List[Tuple[str, float]]:
+        """Semantic search using word embeddings"""
+        request = {'command': 'semantic_search', 'query': query, 'top_k': top_k}
+        response = self._send_request(request)
+        return response.get('results', [])
+    
+    def SaveIndexes(self) -> bool:
+        """Manually trigger index save"""
+        request = {'command': 'save_indexes'}
+        response = self._send_request(request)
+        return response.get('success', False)
