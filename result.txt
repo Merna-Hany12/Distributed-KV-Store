@@ -1,0 +1,255 @@
+============================================================
+Key-Value Store - Tests and Benchmarks
+============================================================
+KVStore server listening on localhost:8010
+
+==================================================
+RUNNING BASIC FUNCTIONAL TESTS (Direct Server)
+==================================================
+
+1. Test: Set then Get
+   ✓ PASSED
+
+2. Test: Set then Delete then Get
+   ✓ PASSED
+
+3. Test: Persistence (Restart)
+Saving indexes...
+Loaded indexes from kvstore_test\node_0\indexes.json
+KVStore server listening on localhost:8010
+   ✓ PASSED
+Saving indexes...
+
+==================================================
+ACID TEST 1: Concurrent Bulk Write Isolation
+==================================================
+   Starting concurrent conflicting transactions...
+   ✓ SUCCESS: Transaction Isolation confirmed. All keys are 'A'.
+
+==================================================
+ACID TEST 2: Atomicity (SIGKILL Crash)
+==================================================
+   Initiating massive bulk write...
+   💀 KILLING SERVER with SIGKILL...
+   Restarting server to verify WAL Atomicity...
+   ✓ SUCCESS: Atomicity Preserved (Committed).
+
+==================================================
+ACID TEST 3: Chaos Snapshot (Bonus)
+==================================================
+   Attempting Snapshot with simulated disk failure...
+   Snapshot outcome: False
+Rebuilding indexes for 1 keys...
+   ✓ SUCCESS: Data recovered from WAL despite snapshot failure.
+
+==================================================
+CLUSTER TEST: Replication & Failover
+==================================================
+   Starting 3-node cluster (Ports 8000, 8001, 8002)...
+   (Scanning for leader...) Redirected to Leader: Node 2
+   Writing 'master_key' to Leader 2...
+   💀 KILLING Leader Node 2...
+   Waiting for Failover (Election)...
+   (Scanning for leader...) Redirected to Leader: Node 1
+   New Leader is Node 1
+   ✓ SUCCESS: Data replicated and available on new Leader.
+   Cleaning up processes...
+======================================================================
+ENHANCED KV STORE - COMPREHENSIVE TEST SUITE
+======================================================================
+
+======================================================================
+TEST 1: Full-Text Search (Inverted Index)
+======================================================================
+KVStore server listening on localhost:9201
+
+📝 Inserting documents...
+   Inserted 5 documents
+
+🔍 Test 1a: OR search for 'Python programming'
+   Found keys: ['doc1', 'doc4', 'doc3']
+   ✓ PASSED
+
+🔍 Test 1b: Search for 'JavaScript'
+   Found keys: ['doc2']
+   ✓ PASSED
+
+🔍 Test 1c: Search for 'Rust' (not in any doc)
+   Found keys: []
+   ✓ PASSED
+
+✅ Full-Text Search — ALL PASSED
+Saving indexes...
+
+======================================================================
+TEST 2: Semantic Search (Word Embeddings)
+======================================================================
+KVStore server listening on localhost:9202
+
+📝 Inserting documents...
+
+🧠 Test 2a: Semantic search for 'coding languages'
+   Results (key, score): [['doc4', 0.4481], ['doc1', 0.4382], ['doc3', 0.1222]]
+   ✓ PASSED (sorted by similarity)
+
+🧠 Test 2b: Semantic search top_k=1
+   Results: [['doc4', 0.6037]]
+   ✓ PASSED
+
+✅ Semantic Search — ALL PASSED
+Saving indexes...
+
+======================================================================
+TEST 3: Index Persistence
+======================================================================
+
+📝 Phase 1: Creating indexes...
+KVStore server listening on localhost:9203
+   Saved indexes to disk
+Saving indexes...
+
+🔄 Phase 2: Restarting server...
+Loaded indexes from test_persist_9203\node_0\indexes.json
+KVStore server listening on localhost:9203
+   Searching for 'fox' after restart...
+   Found keys: ['key1']
+   ✓ PASSED — indexes survived restart
+
+✅ Index Persistence — PASSED
+Saving indexes...
+
+======================================================================
+TEST 4: Phrase Search (Exact Match)
+======================================================================
+KVStore server listening on localhost:9204
+
+🔍 Test 4a: Phrase search 'lazy dog'
+   Found keys: ['s1', 's2']
+   ✓ PASSED
+
+🔍 Test 4b: Phrase search 'blue cat'
+   Found keys: []
+   ✓ PASSED
+
+✅ Phrase Search — ALL PASSED
+Saving indexes...
+
+======================================================================
+TEST 5: Concurrent Indexing
+======================================================================
+KVStore server listening on localhost:9205
+
+📝 Starting 5 concurrent writers (100 writes each)...
+   Completed 500 writes with 0 errors
+
+🔍 Verifying data and search after concurrent writes...
+   Full-text search 'Python' found 10 results
+   ✓ PASSED — all threads wrote successfully, search works
+
+✅ Concurrent Indexing — PASSED
+Saving indexes...
+
+======================================================================
+TEST 6: Delete Updates Index
+======================================================================
+KVStore server listening on localhost:9206
+   ✓ Key found before delete
+   ✓ Key removed from index after delete
+
+✅ Delete Updates Index — PASSED
+Saving indexes...
+
+======================================================================
+TEST SUMMARY
+======================================================================
+  ✅ Passed: 6/6
+  ❌ Failed: 0/6
+======================================================================
+
+======================================================================
+BENCHMARK: Write Throughput
+======================================================================
+KVStore server listening on localhost:8002
+Benchmarking 10,000 INDIVIDUAL writes... Done!
+Saving indexes...
+KVStore server listening on localhost:8002
+Pre-populating with 1,000 keys... Done!
+Benchmarking 10,000 INDIVIDUAL writes... Done!
+Saving indexes...
+KVStore server listening on localhost:8002
+Pre-populating with 10,000 keys... Done!
+Benchmarking 10,000 INDIVIDUAL writes... Done!
+Saving indexes...
+KVStore server listening on localhost:8002
+Pre-populating with 50,000 keys... Done!
+Benchmarking 10,000 INDIVIDUAL writes... Done!
+Saving indexes...
+
+======================================================================
+WRITE THROUGHPUT RESULTS (Individual Set() Operations)
+======================================================================
+  Existing Keys |    Elapsed Time |           Throughput
+----------------------------------------------------------------------
+              0 |           6.30s |   1587.77 writes/sec
+          1,000 |           6.14s |   1629.20 writes/sec
+         10,000 |           6.27s |   1595.15 writes/sec
+         50,000 |           6.88s |   1453.21 writes/sec
+======================================================================
+
+📈 PERFORMANCE ANALYSIS:
+  • Average Throughput: 1,566.33 writes/sec
+  • Best Performance: 1,629.20 writes/sec
+  • Worst Performance: 1,453.21 writes/sec
+  • Performance Degradation: 8.5% (0 keys → 50k keys)
+
+  💡 Note: Each Set() operation includes:
+     - TCP round-trip to server
+     - Write to WAL file
+     - fsync() to physical disk
+     - Response back to client
+
+  ⚡ For batch operations, use BulkSet() for 10-50x better throughput
+======================================================================
+
+======================================================================
+BENCHMARK: Durability (Random Crash Testing)
+======================================================================
+Starting durability test server...
+✓ Server connection verified
+
+The server will be FORCEFULLY KILLED and restarted 5 times randomly.
+
+✓ Writer thread connected successfully
+  💀 Crash #1/5: KILLING server process (had 111 writes)...
+  🔄 Crash #1/5: Restarting server...
+  💀 Crash #2/5: KILLING server process (had 448 writes)...
+  🔄 Crash #2/5: Restarting server...
+  💀 Crash #3/5: KILLING server process (had 726 writes)...
+  🔄 Crash #3/5: Restarting server...
+  💀 Crash #4/5: KILLING server process (had 1,027 writes)...
+  🔄 Crash #4/5: Restarting server...
+  💀 Crash #5/5: KILLING server process (had 1,311 writes)...
+  🔄 Crash #5/5: Restarting server...
+
+  🔍 Final check: Restarting server to verify data...
+  Verifying 1,485 acknowledged writes...
+
+======================================================================
+DURABILITY TEST RESULTS
+======================================================================
+Metric                                   |                     Value
+----------------------------------------------------------------------
+Number of server crashes                 |                         5
+Total acknowledged writes                |                     1,485
+Lost keys after recovery                 |                         0
+Recovered keys                           |                     1,485
+Data durability                          |                   100.00%
+======================================================================
+✓ SUCCESS: 100% durability achieved!
+  All acknowledged writes survived FORCEFUL KILLS.
+======================================================================
+
+============================================================
+All tests and benchmarks completed!
+Results saved to result.txt
+============================================================

@@ -5,6 +5,7 @@ from client import KVClient
 from tests import *
 from benchmark import *
 from test_enhanced import run_all_tests as run_enhanced_tests
+from test_replication_mastrless import run_raft_tests, run_masterless_tests, print_comparison
 
 
 # --- Logger Class to save output to file ---
@@ -24,71 +25,66 @@ class Logger(object):
 
 
 def print_usage():
-    """Print usage instructions."""
     print("""
 ╔══════════════════════════════════════════════════════════════════════╗
 ║          PERSISTENT KEY-VALUE STORE - USAGE INSTRUCTIONS             ║
 ╚══════════════════════════════════════════════════════════════════════╝
 
-📋 OPTION 1: Run All Tests and Benchmarks (Recommended First Run)
+📋 OPTION 1: Run All Tests and Benchmarks
 ───────────────────────────────────────────────────────────────────────
 python main.py
 
-This will:
-  ✓ Run basic functional tests
-  ✓ Run ACID tests (Isolation, Atomicity, Chaos)
-  ✓ Run Cluster Replication & Failover test
-  ✓ Run Enhanced Feature tests (Search, Semantic, Phrase)
-  ✓ Benchmark write throughput
-  ✓ Benchmark durability (random crashes)
-  ✓ SAVE RESULTS to 'result.txt'
+Runs in this order:
+  1. Basic functional tests
+  2. ACID tests (Isolation, Atomicity, Chaos)
+  3. Raft replication tests        ← cluster.py
+  4. Masterless replication tests  ← masterless.py
+  5. Raft vs Masterless comparison table
+  6. Enhanced feature tests (Search, Semantic, Phrase)
+  7. Write throughput benchmark
+  8. Durability benchmark
+
+All output saved to result.txt
 
 
 🖥️  OPTION 2: Run Server Manually
 ───────────────────────────────────────────────────────────────────────
 python main.py --server [--port PORT] [--dir DATA_DIR]
 
-Examples:
   python main.py --server
   python main.py --server --port 8080 --dir my_data
 
-Defaults:
-  - Port: 8000
-  - Data directory: kvstore_data/
-
-Stop server: Press Ctrl+C
+Defaults: port=8000, dir=kvstore_data/
 
 
-💻 OPTION 3: Use the Client Programmatically
+🔄 OPTION 3: Run Replication Tests Only
 ───────────────────────────────────────────────────────────────────────
-from client import KVClient
+python test_replication.py
 
-client = KVClient(host='localhost', port=8000)
+Runs Raft + Masterless tests and prints comparison table.
 
-# Basic operations
-client.Set('username', 'alice')
-value = client.Get('username')       # Returns 'alice'
-client.Delete('username')
-client.BulkSet([('k1','v1'),('k2','v2')])
 
-# Search operations
-client.FullTextSearch('search query')
-client.PhraseSearch('exact phrase')
-client.SemanticSearch('semantic query', top_k=5)
-client.SaveIndexes()
+🔄 OPTION 4: Run a Single Cluster Type
+───────────────────────────────────────────────────────────────────────
+# Raft — 3 nodes
+python cluster.py 0    # Terminal 1
+python cluster.py 1    # Terminal 2
+python cluster.py 2    # Terminal 3
 
-client.close()
+# Masterless — 3 nodes
+python masterless.py 0  # Terminal 1
+python masterless.py 1  # Terminal 2
+python masterless.py 2  # Terminal 3
 
 
 📁 Files Created:
 ───────────────────────────────────────────────────────────────────────
-kvstore_data/
-  └── node_0/
-        ├── wal.log          # Write-ahead log (durability)
-        ├── snapshot.json    # Periodic snapshot
-        └── indexes.json     # Search indexes
-
-result.txt                   # All test + benchmark output
+kvstore_data/          # Default single-node data
+masterless_data/       # Masterless cluster data
+  ├── node_0/
+  ├── node_1/
+  └── node_2/
+result.txt             # Full test + benchmark output
 
 
 ❓ Help:
@@ -122,25 +118,51 @@ if __name__ == "__main__":
         sys.stdout = Logger("result.txt")
 
         print("=" * 60)
-        print("Key-Value Store - Tests and Benchmarks")
+        print("Key-Value Store - Full Test Suite")
         print("=" * 60)
 
+        # -------------------------------------------------------
         # 1. Basic Functional Tests
+        # -------------------------------------------------------
         run_basic_tests()
 
+        # -------------------------------------------------------
         # 2. ACID Tests
+        # -------------------------------------------------------
         test_concurrent_isolation()
         test_crash_atomicity()
         test_chaos_mode()
 
-        # 3. Cluster Test
-        test_cluster_failover()
+        # -------------------------------------------------------
+        # 3. Raft Replication Tests
+        # -------------------------------------------------------
+        raft_results = run_raft_tests()
+        time.sleep(3)  # Let ports release on Windows
 
-        # 4. Enhanced Feature Tests (Search, Semantic, Phrase, Persistence)
+        # -------------------------------------------------------
+        # 4. Masterless Replication Tests
+        # -------------------------------------------------------
+        masterless_results = run_masterless_tests()
+        time.sleep(3)
+
+        # -------------------------------------------------------
+        # 5. Raft vs Masterless Comparison Table
+        # -------------------------------------------------------
+        print_comparison(raft_results, masterless_results)
+
+        # -------------------------------------------------------
+        # 6. Enhanced Feature Tests (Search)
+        # -------------------------------------------------------
         run_enhanced_tests()
 
-        # 5. Performance Benchmarks
+        # -------------------------------------------------------
+        # 7. Write Throughput Benchmark
+        # -------------------------------------------------------
         benchmark_write_throughput()
+
+        # -------------------------------------------------------
+        # 8. Durability Benchmark
+        # -------------------------------------------------------
         benchmark_durability()
 
         print("\n" + "=" * 60)

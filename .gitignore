@@ -1,13 +1,27 @@
-# Data directories
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+.env
+.vscode/
+.idea/
+
+# --- Project Data Directories ---
+# This prevents your local database files from being uploaded
 kvstore_data/
+kvstore_test/
 kvstore_bench/
 kvstore_durability/
-kvstore_test/
+test_fts/
+test_semantic/
+test_persist/
+test_concurrent/
 
-# Python cache
-__pycache__/
-*.pyc
-
-# Logs and Results
+# --- Persistence and Logs ---
 *.log
-result.txt
+*.tmp
+*.json
+# If you want to keep specific config JSONs but ignore data:
+# !config.json
