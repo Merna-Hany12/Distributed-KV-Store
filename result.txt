@@ -1,5 +1,5 @@
 ============================================================
-Key-Value Store - Tests and Benchmarks
+Key-Value Store - Full Test Suite
 ============================================================
 KVStore server listening on localhost:8010
 
@@ -24,7 +24,7 @@ Saving indexes...
 ACID TEST 1: Concurrent Bulk Write Isolation
 ==================================================
    Starting concurrent conflicting transactions...
-   ✓ SUCCESS: Transaction Isolation confirmed. All keys are 'A'.
+   ✓ SUCCESS: Transaction Isolation confirmed. All keys are 'B'.
 
 ==================================================
 ACID TEST 2: Atomicity (SIGKILL Crash)
@@ -38,22 +38,84 @@ ACID TEST 2: Atomicity (SIGKILL Crash)
 ACID TEST 3: Chaos Snapshot (Bonus)
 ==================================================
    Attempting Snapshot with simulated disk failure...
-   Snapshot outcome: False
+   Snapshot outcome: True
 Rebuilding indexes for 1 keys...
    ✓ SUCCESS: Data recovered from WAL despite snapshot failure.
 
-==================================================
-CLUSTER TEST: Replication & Failover
-==================================================
-   Starting 3-node cluster (Ports 8000, 8001, 8002)...
-   (Scanning for leader...) Redirected to Leader: Node 2
-   Writing 'master_key' to Leader 2...
-   💀 KILLING Leader Node 2...
-   Waiting for Failover (Election)...
-   (Scanning for leader...) Redirected to Leader: Node 1
-   New Leader is Node 1
-   ✓ SUCCESS: Data replicated and available on new Leader.
-   Cleaning up processes...
+======================================================================
+RAFT REPLICATION TESTS (cluster.py)
+======================================================================
+
+⏳ Waiting for Raft cluster to elect a leader...
+  ✓ Leader elected: Node 0 (port 8100)
+
+📝 Test 1: Write to leader
+  ✓ PASSED — write accepted by leader
+
+📖 Test 2: Read from follower
+  ✓ PASSED — data confirmed on leader after replication
+
+💀 Test 3: Kill leader, wait for failover
+  Killed Node 0, waiting for new election...
+  ✓ PASSED — new leader: Node 1
+
+📝 Test 4: Write after failover
+  ✓ PASSED — write accepted by new leader
+
+⚡ Test 5: Concurrent writes to leader
+  ✓ PASSED — 100 concurrent writes succeeded
+
+======================================================================
+MASTERLESS REPLICATION TESTS (masterless.py)
+======================================================================
+
+⏳ Waiting for Masterless cluster to start...
+  ✓ All 3 nodes are up
+
+📝 Test 1: Write to Node 0 (any node accepts writes)
+  ✓ PASSED — Node 0 accepted write
+
+📖 Test 2: Read from Node 2 (replicated?)
+  ✓ PASSED — data replicated to Node 2
+
+💀 Test 3: Kill Node 1, check other nodes still work
+  Killed Node 1...
+  ✓ PASSED — Node 0 still accepts writes with Node 1 down
+
+📖 Test 4: Read 'after_kill' from Node 2
+  ✓ PASSED — data replicated to Node 2 (skipping dead Node 1)
+
+⚡ Test 5: Concurrent writes to Node 0 AND Node 2
+  ❌ FAILED — errors: 0, cross-read ok: False
+
+======================================================================
+REPLICATION COMPARISON: RAFT vs MASTERLESS
+======================================================================
+Test                           |      Raft       |   Masterless   
+----------------------------------------------------------------------
+Write accepted                 |    ✅ PASSED     |    ✅ PASSED    
+Read after replication         |    ✅ PASSED     |    ✅ PASSED    
+Node failure tolerance         |    ✅ PASSED     |    ✅ PASSED    
+Write after node fail          |    ✅ PASSED     |    ✅ PASSED    
+Concurrent multi-node          |    ✅ PASSED     |    ❌ FAILED    
+----------------------------------------------------------------------
+TOTAL                          |       5/5       |       4/5      
+======================================================================
+
+📖 HOW THEY DIFFER:
+----------------------------------------------------------------------
+  RAFT (cluster.py):
+    • One LEADER accepts all writes
+    • Followers are read-only replicas
+    • Leader failure → automatic election (5-6 sec)
+    • Strong consistency — all reads see latest write
+
+  MASTERLESS (masterless.py):
+    • ALL nodes accept reads AND writes
+    • No election needed — no single point of failure
+    • Conflicts resolved with vector clocks (LWW)
+    • Eventual consistency — replication is async (50ms)
+======================================================================
 ======================================================================
 ENHANCED KV STORE - COMPREHENSIVE TEST SUITE
 ======================================================================
@@ -190,17 +252,17 @@ WRITE THROUGHPUT RESULTS (Individual Set() Operations)
 ======================================================================
   Existing Keys |    Elapsed Time |           Throughput
 ----------------------------------------------------------------------
-              0 |           6.30s |   1587.77 writes/sec
-          1,000 |           6.14s |   1629.20 writes/sec
-         10,000 |           6.27s |   1595.15 writes/sec
-         50,000 |           6.88s |   1453.21 writes/sec
+              0 |           6.06s |   1650.24 writes/sec
+          1,000 |           6.08s |   1644.88 writes/sec
+         10,000 |           6.12s |   1634.77 writes/sec
+         50,000 |           6.08s |   1643.80 writes/sec
 ======================================================================
 
 📈 PERFORMANCE ANALYSIS:
-  • Average Throughput: 1,566.33 writes/sec
-  • Best Performance: 1,629.20 writes/sec
-  • Worst Performance: 1,453.21 writes/sec
-  • Performance Degradation: 8.5% (0 keys → 50k keys)
+  • Average Throughput: 1,643.42 writes/sec
+  • Best Performance: 1,650.24 writes/sec
+  • Worst Performance: 1,634.77 writes/sec
+  • Performance Degradation: 0.4% (0 keys → 50k keys)
 
   💡 Note: Each Set() operation includes:
      - TCP round-trip to server
@@ -220,19 +282,19 @@ Starting durability test server...
 The server will be FORCEFULLY KILLED and restarted 5 times randomly.
 
 ✓ Writer thread connected successfully
-  💀 Crash #1/5: KILLING server process (had 111 writes)...
+  💀 Crash #1/5: KILLING server process (had 98 writes)...
   🔄 Crash #1/5: Restarting server...
-  💀 Crash #2/5: KILLING server process (had 448 writes)...
+  💀 Crash #2/5: KILLING server process (had 556 writes)...
   🔄 Crash #2/5: Restarting server...
-  💀 Crash #3/5: KILLING server process (had 726 writes)...
+  💀 Crash #3/5: KILLING server process (had 1,006 writes)...
   🔄 Crash #3/5: Restarting server...
-  💀 Crash #4/5: KILLING server process (had 1,027 writes)...
+  💀 Crash #4/5: KILLING server process (had 1,484 writes)...
   🔄 Crash #4/5: Restarting server...
-  💀 Crash #5/5: KILLING server process (had 1,311 writes)...
+  💀 Crash #5/5: KILLING server process (had 1,944 writes)...
   🔄 Crash #5/5: Restarting server...
 
   🔍 Final check: Restarting server to verify data...
-  Verifying 1,485 acknowledged writes...
+  Verifying 2,279 acknowledged writes...
 
 ======================================================================
 DURABILITY TEST RESULTS
@@ -240,9 +302,9 @@ DURABILITY TEST RESULTS
 Metric                                   |                     Value
 ----------------------------------------------------------------------
 Number of server crashes                 |                         5
-Total acknowledged writes                |                     1,485
+Total acknowledged writes                |                     2,279
 Lost keys after recovery                 |                         0
-Recovered keys                           |                     1,485
+Recovered keys                           |                     2,279
 Data durability                          |                   100.00%
 ======================================================================
 ✓ SUCCESS: 100% durability achieved!

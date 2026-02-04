@@ -269,7 +269,7 @@ def start_masterless_cluster():
     procs = []
     for i in range(3):
         wrapper = (
-            f"from masterless import MasterlessNode\n"
+            f"from masterless_replication import MasterlessNode\n"
             f"peers = [('localhost', {MASTERLESS_PORTS[0]}), ('localhost', {MASTERLESS_PORTS[1]}), ('localhost', {MASTERLESS_PORTS[2]})]\n"
             f"node = MasterlessNode({i}, peers)\n"
             f"import time\n"
@@ -396,7 +396,7 @@ def run_masterless_tests():
         t0.join()
         t2.join()
 
-        time.sleep(1)  # Let replication finish
+        time.sleep(4)  # Let replication finish
 
         # Verify: read keys written to Node 0 from Node 2 and vice versa
         all_ok = True

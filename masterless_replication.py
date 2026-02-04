@@ -1,14 +1,8 @@
 """
-masterless.py
+masterless.py (FIXED VERSION)
 Masterless (Multi-Master) Replication using Vector Clocks.
 
-Every node can accept reads AND writes independently.
-Conflicts are resolved using vector clocks (Last-Writer-Wins on conflict).
-Replication is asynchronous — each node pushes its writes to all peers.
-
-How it differs from Raft (cluster.py):
-  Raft:        One LEADER accepts writes, followers are read-only replicas.
-  Masterless:  ALL nodes accept writes, all replicate to each other.
+FIX: Changed data_dir initialization to avoid double-nesting directories
 """
 
 import socket
@@ -34,13 +28,15 @@ class MasterlessNode:
         self.peers = peers                          # All nodes including self
         self.host, self.port = peers[node_id]
 
-        # KVStore handles WAL + indexes
-        self.store = KVStore(data_dir="masterless_data", instance_id=str(node_id))
+        # FIX: Pass the complete path, use empty instance_id to avoid double-nesting
+        self.store = KVStore(data_dir=f"masterless_data/node_{node_id}", instance_id="")
 
         # Vector clock: {node_id_str -> version}
         # Tracks how many writes each node has done
         self.vector_clock: Dict[str, int] = {str(i): 0 for i in range(len(peers))}
         self.clock_lock = threading.Lock()
+
+        self.applied_versions: Dict[str, int] = {str(i): 0 for i in range(len(peers))}
 
         # Replication queue — local writes waiting to be sent to peers
         self.replication_queue: List[Dict] = []
@@ -58,6 +54,7 @@ class MasterlessNode:
         threading.Thread(target=self._replication_loop, daemon=True).start()
 
         print(f"[masterless node_{self.node_id}] Started on {self.host}:{self.port}")
+        self._sync_with_peers()
 
     # =====================================================================
     # VECTOR CLOCK OPERATIONS
@@ -66,6 +63,33 @@ class MasterlessNode:
         """Increment own component of vector clock (called on local write)."""
         with self.clock_lock:
             self.vector_clock[str(self.node_id)] += 1
+    def _sync_with_peers(self):
+        """On startup, pull all latest writes from peers to catch up."""
+        for peer_idx, (host, port) in enumerate(self.peers):
+            if peer_idx == self.node_id:
+                continue
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(2.0)
+                s.connect((host, port))
+                s.sendall(json.dumps({'type': 'get_all_entries'}).encode('utf-8') + b'\n')
+                buffer = b''
+                while True:
+                    chunk = s.recv(4096)
+                    if not chunk:
+                        break
+                    buffer += chunk
+                s.close()
+                if buffer:
+                    data = json.loads(buffer.decode())
+                    for entry, clock, source in data.get('entries', []):
+                        self._handle_replicate({
+                            'entry': entry,
+                            'vector_clock': clock,
+                            'source_node': source
+                        })
+            except:
+                pass
 
     def _merge_clock(self, other_clock: Dict[str, int]):
         """Merge incoming clock — take max of each component."""
@@ -238,47 +262,55 @@ class MasterlessNode:
     # INCOMING REPLICATION FROM PEER
     # =====================================================================
     def _handle_replicate(self, msg: Dict) -> Dict:
-        """
-        Peer sent us a write.
-        1. Check for conflict using vector clocks
-        2. If conflict → resolve with Last-Writer-Wins (higher node_id wins)
-        3. Merge their clock into ours
-        4. Apply the entry locally
-        """
         incoming_clock = msg.get('vector_clock', {})
         source_node = msg.get('source_node', -1)
         entry = msg.get('entry', {})
 
-        # --- Conflict detection ---
+        # --- Skip if this version is already applied ---
+        last_applied = self.applied_versions.get(str(source_node), 0)
+        incoming_version = incoming_clock.get(str(source_node), 0)
+        if incoming_version <= last_applied:
+            return {'success': True}  # already applied
+
+        # --- Detect concurrency BEFORE merging clocks ---
         my_clock = self._get_clock()
-        if self._is_concurrent(my_clock, incoming_clock):
-            # CONFLICT! Log it
+        concurrent = self._is_concurrent(my_clock, incoming_clock)
+
+        # --- Resolve conflicts ---
+        if concurrent:
             self.conflict_log.append({
                 'time': time.time(),
                 'source': source_node,
                 'entry': entry,
                 'my_clock': my_clock,
                 'their_clock': incoming_clock,
-                'resolution': 'LWW: higher node_id wins'
+                'resolution': 'Merged concurrent write'
             })
-            # Last-Writer-Wins: higher source node_id wins
-            # If incoming source is lower than us, we keep ours (ignore this write)
-            if source_node < self.node_id:
-                return {'success': True, 'conflict': 'ignored (lower node_id)'}
+            # Last-Writer-Wins: higher node_id wins
+            if source_node >= self.node_id:
+                self.store.apply_replication_log(entry)
+        else:
+            # Not concurrent → safe to apply
+            self.store.apply_replication_log(entry)
 
-        # --- Merge clock + apply ---
+        # --- Merge clocks after applying ---
         self._merge_clock(incoming_clock)
-        self.store.apply_replication_log(entry)
+
+        # --- Update applied_versions ---
+        self.applied_versions[str(source_node)] = incoming_version
 
         return {'success': True}
+
+
+
 
     # =====================================================================
     # BACKGROUND REPLICATION PUSHER
     # =====================================================================
     def _replication_loop(self):
-        """Every 50ms, grab pending ops and push to all peers."""
+        """Every 10ms (was 50ms), grab pending ops and push to all peers."""
         while self.running:
-            time.sleep(0.05)
+            time.sleep(0.01) # Faster replication
 
             # Grab and clear the queue
             with self.queue_lock:
@@ -322,7 +354,7 @@ if __name__ == "__main__":
     peers = [('localhost', 9100), ('localhost', 9101), ('localhost', 9102)]
 
     if len(sys.argv) < 2:
-        print("Usage: python masterless.py <node_id 0-2>")
+        print("Usage: python masterless_replication <node_id 0-2>")
         sys.exit(1)
 
     node_id = int(sys.argv[1])

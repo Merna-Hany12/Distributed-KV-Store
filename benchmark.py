@@ -6,6 +6,23 @@ import sys
 from server import KVServer
 from client import KVClient
 import random
+def safe_rmtree(path, retries=30, delay=0.2):
+    import shutil, time, os
+    if not os.path.exists(path):
+        return
+    for i in range(retries):
+        try:
+            shutil.rmtree(path)
+            return
+        except PermissionError:
+            time.sleep(delay)
+        except Exception:
+            break
+    # Final attempt with error suppression or manual skip
+    try:
+        shutil.rmtree(path, ignore_errors=True)
+    except:
+        pass
 
 def benchmark_write_throughput():
     """Benchmark write throughput with varying data sizes."""
@@ -70,7 +87,8 @@ def benchmark_write_throughput():
         client.close()
         server.stop()
         time.sleep(1.0)  # Give server time to clean up
-    
+        shutil.rmtree(bench_dir)
+
     # Print results table
     print("\n" + "="*70)
     print("WRITE THROUGHPUT RESULTS (Individual Set() Operations)")
@@ -128,7 +146,7 @@ def benchmark_durability():
     bench_port = 8003
     
     if os.path.exists(bench_dir):
-        shutil.rmtree(bench_dir)
+        safe_rmtree(bench_dir)
     
     num_crashes = 5
     
@@ -143,7 +161,8 @@ def benchmark_durability():
     # Use subprocess for true process killing
     current_process = [None]  # Changed from current_server to current_process
     process_lock = threading.Lock()
-    
+
+
     def start_server_subprocess():
         """Start server as a separate process."""
         with process_lock:

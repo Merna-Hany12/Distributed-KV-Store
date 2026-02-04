@@ -90,7 +90,20 @@ class KVStore:
         line = json.dumps(entry) + '\n'
         self.log_fd.write(line.encode('utf-8'))
         os.fsync(self.log_fd.fileno())
+    def get_with_clock(self, key):
+        data = self.get(key)
+        if data is None:
+            return None, {}
+        return data['value'], data.get('clock', {})
 
+    def set_with_clock(self, key, value, clock):
+        self.set(key, {'value': value, 'clock': clock})
+
+    def apply_replication_log(self, entry):
+        if entry['type'] == 'set':
+            self.set(entry['key'], entry['data'])
+        elif entry['type'] == 'delete':
+            self.delete(entry['key'])
     def apply_replication_log(self, entry: Dict):
         """Used by replication to apply logs from other nodes."""
         with self.lock:

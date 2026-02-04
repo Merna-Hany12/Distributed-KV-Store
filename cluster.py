@@ -19,7 +19,9 @@ class ClusterNode:
         self.peers = peers # List of (host, port) for all nodes
         self.host, self.port = peers[node_id]
         
-        self.store = KVStore(instance_id=str(node_id))
+        # FIXED: Use explicit data directory with instance_id="" to avoid double-nesting
+        # Creates: raft_data/node_0/ instead of kvstore_data/node_0/node_0/
+        self.store = KVStore(data_dir=f"raft_data/node_{node_id}", instance_id="")
         self.state = FOLLOWER
         self.current_term = 0
         self.voted_for = None
@@ -41,6 +43,7 @@ class ClusterNode:
         """Handle incoming TCP requests (Client or Peer)."""
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.settimeout(1.0)  # Add timeout to allow graceful shutdown
         sock.bind((self.host, self.port))
         sock.listen()
         
@@ -48,8 +51,12 @@ class ClusterNode:
             try:
                 client, _ = sock.accept()
                 threading.Thread(target=self._handle_request, args=(client,), daemon=True).start()
+            except socket.timeout:
+                continue
             except:
                 break
+        
+        sock.close()
 
     def _handle_request(self, sock):
         """Process JSON messages."""
@@ -65,7 +72,10 @@ class ClusterNode:
             resp = self._dispatch(msg)
             sock.sendall(json.dumps(resp).encode() + b'\n')
         except Exception as e:
-            sock.sendall(json.dumps({'error': str(e)}).encode() + b'\n')
+            try:
+                sock.sendall(json.dumps({'error': str(e)}).encode() + b'\n')
+            except:
+                pass
         finally:
             sock.close()
 
@@ -84,7 +94,18 @@ class ClusterNode:
             if self.state != LEADER:
                 return {'status': 'redirect', 'leader_id': self.leader_id}
             results = self.store.full_text_search(msg['query'], msg.get('top_k', 10))
-            return {'status': 'ok', 'results': results}            
+            return {'status': 'ok', 'results': results}
+        elif mtype == 'semantic_search':
+            if self.state != LEADER:
+                return {'status': 'redirect', 'leader_id': self.leader_id}
+            results = self.store.semantic_search(msg['query'], msg.get('top_k', 10))
+            return {'status': 'ok', 'results': results}
+        elif mtype == 'phrase_search':
+            if self.state != LEADER:
+                return {'status': 'redirect', 'leader_id': self.leader_id}
+            results = self.store.phrase_search(msg['phrase'])
+            return {'status': 'ok', 'results': results}
+            
         # --- CLIENT MESSAGES ---
         # "Writes and reads happen only to primary"
         if self.state != LEADER:
@@ -101,6 +122,10 @@ class ClusterNode:
         elif mtype == 'bulk_set':
             success = self._replicate_to_followers({'type': 'bulk_set', 'items': msg['items']})
             return {'status': 'ok' if success else 'error'}
+        elif mtype == 'delete':
+            # ADDED: Support for delete operation
+            success = self._replicate_to_followers({'type': 'delete', 'key': msg['key']})
+            return {'status': 'ok' if success else 'error'}
             
         return {'error': 'unknown command'}
 
@@ -112,6 +137,9 @@ class ClusterNode:
             self.store.set(entry['key'], entry['value'])
         elif entry['type'] == 'bulk_set':
             self.store.bulk_set(entry['items'])
+        elif entry['type'] == 'delete':
+            # ADDED: Support for delete operation
+            self.store.delete(entry['key'])
             
         # 2. Send to Peers
         ack_count = 1 # Self is 1
@@ -216,6 +244,13 @@ class ClusterNode:
         finally:
             s.close()
 
+    def stop(self):
+        """ADDED: Gracefully shut down the node."""
+        print(f"[Node {self.node_id}] Stopping...")
+        self.running = False
+        self.store.save_indexes()
+        self.store.close()
+
 # Helper to run specific node
 if __name__ == "__main__":
     # peers config
@@ -231,4 +266,5 @@ if __name__ == "__main__":
     try:
         while True: time.sleep(1)
     except KeyboardInterrupt:
-        print("Shutting down...")
+        print(f"\n[Node {node_id}] Shutting down gracefully...")
+        node.stop()
